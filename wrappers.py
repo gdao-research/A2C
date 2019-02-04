@@ -4,6 +4,8 @@ import cv2
 import gym
 import numpy as np
 from gym import spaces
+from monitor import Monitor
+
 SEED = 0
 
 class NoopResetEnv(gym.Wrapper):
@@ -247,12 +249,13 @@ class SubprocVecEnv():
     def num_envs(self):
         return len(self.remotes)
 
-def make_atari(env_id, rank, episodic_life=True, clip_reward=True, frame_stack=False):
+def make_atari(env_id, rank, logdir, episodic_life=True, clip_reward=True, frame_stack=True):
     def _fn():
         env = gym.make(env_id)
         env = NoopResetEnv(env)
         env = MaxAndSkipEnv(env)
         env.seed(SEED + rank)
+        env = Monitor(env, logdir, allow_early_resets=True)
         if episodic_life:
             env = EpisodicLiveEnv(env)
         if 'FIRE' in env.unwrapped.get_action_meanings():
