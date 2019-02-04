@@ -1,9 +1,10 @@
 from collections import deque
+from multiprocessing import Pipe, Process
 import cv2
 import gym
 import numpy as np
 from gym import spaces
-
+SEED = 0
 
 class NoopResetEnv(gym.Wrapper):
     def __init__(self, env, noop_max=30):
@@ -107,6 +108,13 @@ class WarpFrame(gym.ObservationWrapper):
             frame = np.expand_dims(frame, -1)
         return frame
 
+class ClipRewardEnv(gym.RewardWrapper):
+    def __init__(self, env):
+        super(ClipRewardEnv, self).__init__(env)
+
+    def reward(self, reward):
+        return np.sign(reward)
+
 class FrameStack(gym.Wrapper):
     def __init__(self, env, k):
         super(FrameStack, self).__init__(env)
@@ -149,19 +157,116 @@ class LazyFrames(object):
     def __getitem__(self, i):
         return self._force()[i]
 
-def make_atari(env_id):
-    env = gym.make(env_id)
-    env = NoopResetEnv(env)
-    env = MaxAndSkipEnv(env)
-    env = EpisodicLiveEnv(env)
-    if 'FIRE' in env.unwrapped.get_action_meanings():
-        env = FireResetEnv(env)
-    env = WarpFrame(env)
-    env = FrameStack(env, 4)
-    return env
+def worker(remote, parent_remote, env_fn_wrapper):
+    parent_remote.close()
+    env = env_fn_wrapper.x()
+    while True:
+        cmd, data = remote.recv()
+        if cmd == 'step':
+            ob, reward, done, info = env.step(data)
+            if done:
+                ob = env.reset()
+            remote.send((ob, reward, done, info))
+        elif cmd == 'reset':
+            ob = env.reset()
+            remote.send(ob)
+        elif cmd == 'reset_task':
+            ob = env.reset_task()
+            remote.send(ob)
+        elif cmd == 'close':
+            remote.close()
+            break
+        elif cmd == 'get_spaces':
+            remote.send((env.action_space, env.observation_space))
+        elif cmd == 'get_id':
+            remote.send(env.spec.id)
+        else:
+            raise NotImplementedError
+
+
+class CloudpickleWrapper(object):
+    def __init__(self, x):
+        self.x = x
+
+    def __getstate__(self):
+        import cloudpickle
+        return cloudpickle.dumps(self.x)
+
+    def __setstate__(self, ob):
+        import pickle
+        self.x = pickle.loads(ob)
+
+
+class SubprocVecEnv():
+    def __init__(self, env_fns):
+        self.closed = False
+        nenvs = len(env_fns)
+        self.remotes, self.work_remotes = zip(*[Pipe() for _ in range(nenvs)])
+        self.ps = [Process(target=worker, args=(work_remote, remote, CloudpickleWrapper(env_fn)))
+                   for (work_remote, remote, env_fn) in zip(self.work_remotes, self.remotes, env_fns)]
+        for p in self.ps:
+            p.daemon = True  # if the main process crashes, we should not cause things to hang
+            p.start()
+        for remote in self.work_remotes:
+            remote.close()
+
+        self.remotes[0].send(('get_spaces', None))
+        self.action_space, self.observation_space = self.remotes[0].recv()
+
+        self.remotes[0].send(('get_id', None))
+        self.env_id = self.remotes[0].recv()
+
+    def step(self, actions):
+        for remote, action in zip(self.remotes, actions):
+            remote.send(('step', action))
+        results = [remote.recv() for remote in self.remotes]
+        obs, rews, dones, infos = zip(*results)
+        return np.stack(obs), np.stack(rews), np.stack(dones), infos
+
+    def reset(self):
+        for remote in self.remotes:
+            remote.send(('reset', None))
+        return np.stack([remote.recv() for remote in self.remotes])
+
+    def reset_task(self):
+        for remote in self.remotes:
+            remote.send(('reset_task', None))
+        return np.stack([remote.recv() for remote in self.remotes])
+
+    def close(self):
+        if self.closed:
+            return
+
+        for remote in self.remotes:
+            remote.send(('close', None))
+        for p in self.ps:
+            p.join()
+        self.closed = True
+
+    @property
+    def num_envs(self):
+        return len(self.remotes)
+
+def make_atari(env_id, rank, episodic_life=True, clip_reward=True, frame_stack=False):
+    def _fn():
+        env = gym.make(env_id)
+        env = NoopResetEnv(env)
+        env = MaxAndSkipEnv(env)
+        env.seed(SEED + rank)
+        if episodic_life:
+            env = EpisodicLiveEnv(env)
+        if 'FIRE' in env.unwrapped.get_action_meanings():
+            env = FireResetEnv(env)
+        env = WarpFrame(env)
+        if clip_reward:
+            env = ClipRewardEnv(env)
+        if frame_stack:
+            env = FrameStack(env, 4)
+        return env
+    return _fn
 
 
 if __name__ == '__main__':
-    env = make_atari('BreakoutNoFrameskip-v4')
-    s = env.reset()
-    ns, r, d, info = env.step(3)
+    envs = SubprocVecEnv([make_atari('BreakoutNoFrameskip-v4', r) for r in range(4)])
+    s = envs.reset()
+    print(s.shape)
