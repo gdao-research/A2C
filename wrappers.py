@@ -270,6 +270,6 @@ def make_atari(env_id, rank, logdir, episodic_life=True, clip_reward=True, frame
 
 
 if __name__ == '__main__':
-    envs = SubprocVecEnv([make_atari('BreakoutNoFrameskip-v4', r) for r in range(4)])
+    envs = SubprocVecEnv([make_atari('BreakoutNoFrameskip-v4', r, './monitor') for r in range(4)])
     s = envs.reset()
     print(s.shape)
