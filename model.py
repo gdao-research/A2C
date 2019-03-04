@@ -65,3 +65,11 @@ class Model(object):
     def train(self, states, actions, Rewards):
         pl, vl, xel, l, _ = tf.get_default_session().run([self.policy_loss, self.value_loss, self.xentropy_loss, self.loss, self.train_op], feed_dict={self.policy.state_ph: states, self.action_ph: actions, self.Reward_ph: Rewards})
         return pl, vl, xel, l
+
+    def save(self, directory, i):
+        saver = tf.train.Saver()
+        d = saver.save(tf.get_default_session(), f'{directory}/model_{i}.ckpt')
+
+    def load(self, directory, i):
+        saver = tf.train.Saver()
+        saver.restore(tf.get_default_session(), f'{directory}/model_{i}.ckpt')
