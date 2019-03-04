@@ -1,5 +1,9 @@
 import tensorflow as tf
+import numpy as np
 
+def set_global_seed(i):
+    tf.set_random_seed(i)
+    np.random.seed(i)
 
 def create_session(parallel_threads):
     config = tf.ConfigProto(intra_op_parallelism_threads=parallel_threads, inter_op_parallelism_threads=parallel_threads)
