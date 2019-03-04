@@ -59,4 +59,8 @@ if __name__ == '__main__':
             sb, ab, Rb = runner.rollout()
             pl, vl, xel, l = model.train(sb, ab, Rb)
             # if i % 1000 == 0:
-            #     logger.log(f'Policy loss: {pl} | Value loss: {vl} | Cross-entropy loss: {xel} | Total loss: {l}')
+                # logger.record_tabular('policyLoss', pl)
+                # logger.record_tabular('valueLoss', vl)
+                # logger.record_tabular('crossEntropyLoss', xel)
+                # logger.record_tabular('totalLoss', l)
+                # logger.dump_tabular()
