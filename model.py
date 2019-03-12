@@ -48,12 +48,13 @@ class Model(object):
         forward_model = Forward(nb_action)
         self.policy = Policy(forward_model, state_dim)
 
-        adv = tf.subtract(self.Reward_ph, tf.stop_gradient(self.policy.value_1d), name='advantage')
-        log_pi_a_s = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.policy.logits, labels=self.action_ph)
-        self.policy_loss = tf.reduce_sum(adv*log_pi_a_s, name='policy_loss')
-        self.value_loss = tf.nn.l2_loss(self.Reward_ph - self.policy.value_1d, name='value_loss')
-        self.xentropy_loss = -tf.reduce_sum(entropy(self.policy.logits))
-        self.loss = tf.truediv(self.policy_loss + 0.01*self.xentropy_loss + 0.5*self.value_loss, tf.cast(tf.shape(self.action_ph)[0], tf.float32), name='mean_loss')
+        with tf.name_scope('loss_scope'):
+            adv = tf.subtract(self.Reward_ph, tf.stop_gradient(self.policy.value_1d), name='advantage')
+            log_pi_a_s = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.policy.logits, labels=self.action_ph)
+            self.policy_loss = tf.reduce_sum(adv*log_pi_a_s, name='policy_loss')
+            self.value_loss = tf.nn.l2_loss(self.Reward_ph - self.policy.value_1d, name='value_loss')
+            self.xentropy_loss = -tf.reduce_sum(entropy(self.policy.logits))
+            self.loss = tf.truediv(self.policy_loss + 0.01*self.xentropy_loss + 0.5*self.value_loss, tf.cast(tf.shape(self.action_ph)[0], tf.float32), name='mean_loss')
 
         params = tf.trainable_variables()
         grads = tf.gradients(self.loss, params)
@@ -73,3 +74,12 @@ class Model(object):
     def load(self, directory, i):
         saver = tf.train.Saver()
         saver.restore(tf.get_default_session(), f'{directory}/model_{i}.ckpt')
+
+
+if __name__ == '__main__':
+    import os
+    os.system('rm -rf test')  # Clean up test
+    sess = tf.InteractiveSession()
+    model = Model((84, 84, 4), 6)
+    sess.run(tf.global_variables_initializer())
+    writer = tf.summary.FileWriter('./test', sess.graph)  # tensorboard --logdir=./test
