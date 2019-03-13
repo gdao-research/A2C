@@ -2,7 +2,7 @@
 
 An implementation of A2C (a variant of [A3C](https://arxiv.org/pdf/1602.01783.pdf)) from OpenAI blog [post](https://blog.openai.com/baselines-acktr-a2c/).
 
-Intuition:
+## Intuition:
   - Multiple workers work on different copies of an environment to collect a batch of data $\rightarrow$ No need for replay buffer.
   - Noise is added to logits of policy to ensure exploration.
   - Perform 1 gradient update step based on the data batch.
